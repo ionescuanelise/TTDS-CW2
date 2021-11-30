@@ -8,6 +8,7 @@ import urllib.request
 from nltk.stem import PorterStemmer
 
 ps = PorterStemmer()
+mires = []
 
 
 def download_file(url, file_name):
@@ -157,6 +158,61 @@ def write_to_file(elems_to_print):
             f.write('\n')
 
 
+def WorldLevel(vocab):
+    orders = [['Quran', 'OT', 'NT'], ['OT', 'Quran', 'NT'], ['NT', 'Quran', 'OT']]
+    chires = []
+
+    for order in orders:
+        target = order[0]
+        targetlen = len(dict_corpora[target])
+        otherlen = len(dict_corpora[order[1]]) + len(dict_corpora[order[2]])
+        N = targetlen + otherlen
+        onemires = []
+        onechires = []
+
+        for term in vocab:
+            N11 = 0
+            for item in dict_corpora[target]:
+                if term in item:
+                    N11 += 1
+            N01 = targetlen - N11
+
+            N10 = 0
+            for corpora in order[1:]:
+                for item in dict_corpora[corpora]:
+                    if term in item:
+                        N10 += 1
+            N00 = otherlen - N10
+
+            N1x = N11 + N10
+            Nx1 = N11 + N01
+            N0x = N00 + N01
+            Nx0 = N00 + N10
+
+            sub1 = np.log2(N * N11 / (N1x * Nx1)) if N * N11 != 0 and N1x * Nx1 != 0 else 0
+            sub2 = np.log2(N * N01 / (N0x * Nx1)) if N * N01 != 0 and N0x * Nx1 != 0 else 0
+            sub3 = np.log2(N * N10 / (N1x * Nx0)) if N * N10 != 0 and N1x * Nx0 != 0 else 0
+            sub4 = np.log2(N * N00 / (N0x * Nx0)) if N * N00 != 0 and N0x * Nx0 != 0 else 0
+            mi = (N11 / N) * sub1 + (N01 / N) * sub2 + (N10 / N) * sub3 + (N00 / N) * sub4
+
+            below = Nx1 * N1x * Nx0 * N0x
+            chi = N * np.square(N11 * N00 - N10 * N01) / below if below != 0 else 0
+
+            onemires.append([term, mi])
+            onechires.append([term, chi])
+
+        mires.append(sorted(onemires, key=lambda x: x[-1], reverse=-True))
+        chires.append(sorted(onechires, key=lambda x: x[-1], reverse=-True))
+
+    print("MI")
+    for each in mires:
+        print(each[:10])
+
+    print("CHI")
+    for each in chires:
+        print(each[:10])
+
+
 if __name__ == '__main__':
     DATA_DIR = 'data/'
     STOP_WORDS_FILE = 'stop_words.txt'
@@ -253,5 +309,7 @@ if __name__ == '__main__':
             for word in words:
                 dict_corpora[line[0]].add(word)
                 vocab.add(word)
+
+    WorldLevel(vocab)
 
 

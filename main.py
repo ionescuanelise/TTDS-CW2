@@ -17,7 +17,6 @@ from sklearn import svm
 from sklearn import ensemble
 from sklearn.metrics import classification_report
 
-
 ps = PorterStemmer()
 mires = []
 dict_corpora = {}
@@ -282,28 +281,65 @@ def TopicLevel():
 
     return lda, topic_dic_quran, topic_dic_nt, topic_dic_ot
 
-    # for i in range(len(text)):
-    #     scores.append(lda.get_document_topics(corpus[i]))
-    #
-    # print('LDA')
-    # order = [[0, len1], [len1, len1 + len2], [len1 + len2, len(text)]]
-    #
-    # for i in range(3):
-    #     score = [0 for i in range(0, 20)]
-    #     for doc in scores[order[i][0]:order[i][1]]:
-    #         for item in doc:
-    #             score[item[0]] += item[1]
-    #     avg = np.array(score)/(order[i][1] - order[i][0])
-    #     print(avg)
-    #
-    # for topic in lda.print_topics(num_topics=20, num_words=10):
-    #     print(topic)
+
+def preprocess_data(data):
+    chars_to_remove = re.compile(f'[{string.punctuation}]')
+
+    documents = []
+    categories = []
+    vocab = set([])
+
+    lines = data.split('\n')
+
+    for line in lines:
+        # make a dictionary for each document
+        # word_id -> count (could also be tf-idf score, etc.)
+        line = line.strip()
+        if line:
+            # split on tabs, we have 3 columns in this tsv format file
+            category, verses = line.split('\t')
+
+            words = chars_to_remove.sub('', verses).lower().split()
+            for word in words:
+                vocab.add(word)
+
+            documents.append(words)
+            categories.append(category)
+
+    return documents, categories, vocab
+
+
+def convert_to_bow_matrix(preprocessed_data, word2id):
+    # matrix size is number of docs x vocab size + 1 (for OOV)
+    matrix_size = (len(preprocessed_data), len(word2id) + 1)
+    oov_index = len(word2id)
+    # matrix indexed by [doc_id, token_id]
+    X = scipy.sparse.dok_matrix(matrix_size)
+
+    # iterate through all documents in the dataset
+    for doc_id, doc in enumerate(preprocessed_data):
+        for word in doc:
+            # default is 0, so just add to the count for this word in this doc
+            # if the word is oov, increment the oov_index
+            X[doc_id, word2id.get(word, oov_index)] += 1
+
+    return X
+
+
+def compute_accuracy(predictions, true_values):
+    num_correct = 0
+    num_total = len(predictions)
+    for predicted, true in zip(predictions, true_values):
+        if predicted == true:
+            num_correct += 1
+    return num_correct / num_total
 
 
 if __name__ == '__main__':
     DATA_DIR = 'data/'
     STOP_WORDS_FILE = 'stop_words.txt'
     TRAIN_AND_DEV = DATA_DIR + 'train_and_dev.tsv'
+    TEST = DATA_DIR + 'test.tsv'
     QRELS = DATA_DIR + 'qrels.csv'
     SYSTEM_RESULTS = DATA_DIR + 'system_results.csv'
 
@@ -402,38 +438,111 @@ if __name__ == '__main__':
                 vocab.extend(words)
 
     allWords = set(vocab)
-    WorldLevel(allWords)
+    # WorldLevel(allWords)
 
     # run LDA model on three corpora
-    lda, topic_dic_Quran, topic_dic_NT, topic_dic_OT = TopicLevel()
+    # lda, topic_dic_Quran, topic_dic_NT, topic_dic_OT = TopicLevel()
 
     # rank the topics for each corpus
-    topic_ranked_NT = sorted(topic_dic_NT.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)[:20]
-
-    topic_ranked_OT = sorted(topic_dic_OT.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)[:20]
-
-    topic_ranked_Quran = sorted(topic_dic_Quran.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)[:20]
-
-    print("ordered topics for NT")
-    for topic in topic_ranked_NT:
-        print("topic_id: " + str(topic[0]) + ", score: " + str(topic[1]))
-        print(lda.print_topic(topic[0]))
-
-    print("ordered topics for OT")
-    for topic in topic_ranked_OT:
-        print("topic_id: " + str(topic[0]) + ", score: " + str(topic[1]))
-        print(lda.print_topic(topic[0]))
-
-    print("ordered topics for quran")
-    for topic in topic_ranked_Quran:
-        print("topic_id: " + str(topic[0]) + ", score: " + str(topic[1]))
-        print(lda.print_topic(topic[0]))
+    # topic_ranked_NT = sorted(topic_dic_NT.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)[:20]
+    #
+    # topic_ranked_OT = sorted(topic_dic_OT.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)[:20]
+    #
+    # topic_ranked_Quran = sorted(topic_dic_Quran.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)[:20]
+    #
+    # print("ordered topics for NT")
+    # for topic in topic_ranked_NT:
+    #     print("topic_id: " + str(topic[0]) + ", score: " + str(topic[1]))
+    #     print(lda.print_topic(topic[0]))
+    #
+    # print("ordered topics for OT")
+    # for topic in topic_ranked_OT:
+    #     print("topic_id: " + str(topic[0]) + ", score: " + str(topic[1]))
+    #     print(lda.print_topic(topic[0]))
+    #
+    # print("ordered topics for quran")
+    # for topic in topic_ranked_Quran:
+    #     print("topic_id: " + str(topic[0]) + ", score: " + str(topic[1]))
+    #     print(lda.print_topic(topic[0]))
 
     # part 3 - text classification
 
+    training_data = open(TRAIN_AND_DEV, encoding="latin-1").read()
+    test_data = open(TEST, encoding="latin-1").read()
 
+    preprocessed_training_data, training_categories, train_vocab = preprocess_data(training_data)
+    preprocessed_test_data, test_categories, test_vocab = preprocess_data(test_data)
 
+    print(f"Training Data has {len(preprocessed_training_data)} " +
+          f"documents and vocab size of {len(train_vocab)}")
+    print(f"Test Data has {len(preprocessed_test_data)} " +
+          f"documents and vocab size of {len(test_vocab)}")
+    print(f"There were {len(set(training_categories))} " +
+          f"categories in the training data and {len(set(test_categories))} in the test.")
 
+    print(collections.Counter(training_categories).most_common())
 
+    # convert the vocab to a word id lookup dictionary
+    # anything not in this will be considered "out of vocabulary" OOV
 
+    word2id = {}
+    for word_id, word in enumerate(train_vocab):
+        word2id[word] = word_id
 
+    cat2id = {}
+    for cat_id, cat in enumerate(set(training_categories)):
+        cat2id[cat] = cat_id
+
+    X_train = convert_to_bow_matrix(preprocessed_training_data, word2id)
+    y_train = [cat2id[cat] for cat in training_categories]
+
+    model = sklearn.svm.LinearSVC(C=1000)
+    model.fit(X_train, y_train)
+
+    # make a prediction
+    sample_text = ['christ', 'israel', 'jesus', 'god', 'a', 'resurrection']
+    # create just a single vector as input (as a 1 x V matrix)
+    sample_x_in = scipy.sparse.dok_matrix((1, len(word2id) + 1))
+    for word in sample_text:
+        sample_x_in[0, word2id[word]] += 1
+
+    # what does the example document look like?
+    print(sample_x_in)
+    prediction = model.predict(sample_x_in)
+    # what category was predicted?
+    print("Prediction was:", prediction[0])
+    # what category was that?
+    print(cat2id)
+
+    y_train_predictions = model.predict(X_train)
+    accuracy = compute_accuracy(y_train_predictions, y_train)
+    print("Accuracy:", accuracy)
+
+    X_test = convert_to_bow_matrix(preprocessed_test_data, word2id)
+    y_test = [cat2id[cat] for cat in test_categories]
+
+    y_test_predictions = model.predict(X_test)
+    accuracy = compute_accuracy(y_test_predictions, y_test)
+    print("Accuracy:", accuracy)
+
+    cat_names = []
+    for cat, cid in sorted(cat2id.items(), key=lambda x: x[1]):
+        cat_names.append(cat)
+    print(classification_report(y_test, y_test_predictions, target_names=cat_names))
+
+    baseline_predictions = [cat2id['NT']] * len(y_test)
+    baseline_accuracy = compute_accuracy(baseline_predictions, y_train)
+    print("Accuracy:", baseline_accuracy)
+
+    model = sklearn.ensemble.RandomForestClassifier()
+    model.fit(X_train, y_train)
+
+    y_train_predictions = model.predict(X_train)
+    print("Train accuracy was:", compute_accuracy(y_train_predictions, y_train))
+    y_test_predictions = model.predict(X_test)
+    print("Test accuracy was:", compute_accuracy(y_test_predictions, y_test))
+
+    cat_names = []
+    for cat, cid in sorted(cat2id.items(), key=lambda x: x[1]):
+        cat_names.append(cat)
+    print(classification_report(y_test, y_test_predictions, target_names=cat_names))

@@ -1,14 +1,26 @@
-import csv
 import os
 import re
-from math import log
-
 import numpy as np
 import urllib.request
+import sklearn
 from nltk.stem import PorterStemmer
+from gensim.corpora.dictionary import Dictionary
+from gensim.models import LdaModel
+
+import collections
+import string
+
+# import this for storing our BOW format
+import scipy
+from scipy import sparse
+from sklearn import svm
+from sklearn import ensemble
+from sklearn.metrics import classification_report
+
 
 ps = PorterStemmer()
 mires = []
+dict_corpora = {}
 
 
 def download_file(url, file_name):
@@ -45,8 +57,9 @@ def tokenize(input_text):
 
 
 def preprocess(input_text):
+    initial_words = tokenize(input_text)
     # convert text to lowercase
-    tokens = to_lower_case(input_text)
+    tokens = to_lower_case(initial_words)
     # remove the stop words
     text_without_sw = remove_stopwords(tokens)
     # apply stemming
@@ -55,22 +68,30 @@ def preprocess(input_text):
     return stemmed_words
 
 
-def compute_mutual_info(n00, n01, n11, n10):
-    a = n11 + n01
-    aa = n10 + n11
-    b = n00 + n01
-    bb = n10 + n00
-    n = n00 + n01 + n10 + n11
+def compute_mutual_info(N, N00, N01, N11, N10):
+    a = N11 + N01
+    aa = N10 + N11
+    b = N00 + N01
+    bb = N10 + N00
 
-    return (n11 / n * log(2, (n*n11)/(aa*a)) +
-            n01 / n * log(2, (n*n01)/(b*a)) +
-            n10 / n * log(2, (n*n10)/(aa*bb)) +
-            n00 / n * log(2, (n*n00)/(b*bb)))
+    part1 = np.log2(N * N11 / (aa * a)) if N * N11 != 0 and aa * a != 0 else 0
+    part2 = np.log2(N * N01 / (b * a)) if N * N01 != 0 and a * b != 0 else 0
+    part3 = np.log2(N * N10 / (aa * bb)) if N * N10 != 0 and aa * bb != 0 else 0
+    part4 = np.log2(N * N00 / (b * bb)) if N * N00 != 0 and b * bb != 0 else 0
+
+    return N11 / N * part1 + N01 / N * part2 + N10 / N * part3 + N00 / N * part4
 
 
-def compute_chi_squared(n00, n01, n11, n10):
-    n = n00 + n01 + n10 + n11
-    return (n * pow(2, (n11 * n00 - n10 * n01))) / ((n11+n01) * (n11+n10) * (n10 + n00) * (n01 + n00))
+def compute_chi_squared(N, N00, N01, N11, N10):
+    a = N11 + N01
+    aa = N10 + N11
+    b = N00 + N01
+    bb = N10 + N00
+
+    if a * aa * b * bb == 0:
+        return 0
+
+    return N * np.square(N11 * N00 - N10 * N01) / (a * aa * b * bb)
 
 
 def precision_score(retrieved, relevant):
@@ -158,48 +179,38 @@ def write_to_file(elems_to_print):
             f.write('\n')
 
 
-def WorldLevel(vocab):
+def WorldLevel(allWords):
     orders = [['Quran', 'OT', 'NT'], ['OT', 'Quran', 'NT'], ['NT', 'Quran', 'OT']]
     chires = []
 
     for order in orders:
-        target = order[0]
-        targetlen = len(dict_corpora[target])
+        targetlen = len(dict_corpora[order[0]])
         otherlen = len(dict_corpora[order[1]]) + len(dict_corpora[order[2]])
         N = targetlen + otherlen
         onemires = []
         onechires = []
 
-        for term in vocab:
+        for term in allWords:
             N11 = 0
-            for item in dict_corpora[target]:
-                if term in item:
+            for verses in dict_corpora[order[0]]:
+                if term in verses:
                     N11 += 1
-            N01 = targetlen - N11
 
-            N10 = 0
-            for corpora in order[1:]:
-                for item in dict_corpora[corpora]:
-                    if term in item:
-                        N10 += 1
-            N00 = otherlen - N10
+            if N11 != 0:
+                N01 = targetlen - N11
 
-            N1x = N11 + N10
-            Nx1 = N11 + N01
-            N0x = N00 + N01
-            Nx0 = N00 + N10
+                N10 = 0
+                for corpora in order[1:]:
+                    for item in dict_corpora[corpora]:
+                        if term in item:
+                            N10 += 1
+                N00 = otherlen - N10
 
-            sub1 = np.log2(N * N11 / (N1x * Nx1)) if N * N11 != 0 and N1x * Nx1 != 0 else 0
-            sub2 = np.log2(N * N01 / (N0x * Nx1)) if N * N01 != 0 and N0x * Nx1 != 0 else 0
-            sub3 = np.log2(N * N10 / (N1x * Nx0)) if N * N10 != 0 and N1x * Nx0 != 0 else 0
-            sub4 = np.log2(N * N00 / (N0x * Nx0)) if N * N00 != 0 and N0x * Nx0 != 0 else 0
-            mi = (N11 / N) * sub1 + (N01 / N) * sub2 + (N10 / N) * sub3 + (N00 / N) * sub4
+                mi = compute_mutual_info(N, N00, N01, N11, N10)
+                chi = compute_chi_squared(N, N00, N01, N11, N10)
 
-            below = Nx1 * N1x * Nx0 * N0x
-            chi = N * np.square(N11 * N00 - N10 * N01) / below if below != 0 else 0
-
-            onemires.append([term, mi])
-            onechires.append([term, chi])
+                onemires.append([term, mi])
+                onechires.append([term, chi])
 
         mires.append(sorted(onemires, key=lambda x: x[-1], reverse=-True))
         chires.append(sorted(onechires, key=lambda x: x[-1], reverse=-True))
@@ -211,6 +222,82 @@ def WorldLevel(vocab):
     print("CHI")
     for each in chires:
         print(each[:10])
+
+
+def TopicLevel():
+    all_texts = dict_corpora['OT'] + dict_corpora['NT'] + dict_corpora['Quran']
+
+    dictionary = Dictionary(all_texts)
+
+    corpus = [dictionary.doc2bow(text) for text in all_texts]
+    lda = LdaModel(corpus, id2word=dictionary, num_topics=20, random_state=1918, passes=20)
+
+    # LDA for OT
+    dictionary_ot = Dictionary(dict_corpora['OT'])
+
+    corpus_ot = [dictionary_ot.doc2bow(text) for text in dict_corpora['OT']]
+    topics_ot = lda.get_document_topics(corpus_ot)
+    topic_dic_ot = {}
+    for doc in topics_ot:
+        for topic in doc:
+            if topic[0] not in topic_dic_ot.keys():
+                topic_dic_ot[topic[0]] = topic[1]
+            else:
+                topic_dic_ot[topic[0]] += topic[1]
+
+    # LDA for NT
+    dictionary_nt = Dictionary(dict_corpora['NT'])
+
+    corpus_nt = [dictionary_nt.doc2bow(text) for text in dict_corpora['NT']]
+    topics_nt = lda.get_document_topics(corpus_nt)
+    topic_dic_nt = {}
+
+    for doc in topics_nt:
+        for topic in doc:
+            if topic[0] not in topic_dic_nt.keys():
+                topic_dic_nt[topic[0]] = topic[1]
+            else:
+                topic_dic_nt[topic[0]] += topic[1]
+
+    # LDA for Quran
+    dictionary_quran = Dictionary(dict_corpora['Quran'])
+
+    corpus_quran = [dictionary_quran.doc2bow(text) for text in dict_corpora['Quran']]
+    topics_quran = lda.get_document_topics(corpus_quran)
+    topic_dic_quran = {}
+
+    for doc in topics_quran:
+        for topic in doc:
+            if topic[0] not in topic_dic_quran.keys():
+                topic_dic_quran[topic[0]] = topic[1]
+            else:
+                topic_dic_quran[topic[0]] += topic[1]
+
+    for k, v in topic_dic_quran.items():
+        topic_dic_quran[k] = v / len(dict_corpora['Quran'])
+    for k, v in topic_dic_ot.items():
+        topic_dic_ot[k] = v / len(dict_corpora['OT'])
+    for k, v in topic_dic_nt.items():
+        topic_dic_nt[k] = v / len(dict_corpora['NT'])
+
+    return lda, topic_dic_quran, topic_dic_nt, topic_dic_ot
+
+    # for i in range(len(text)):
+    #     scores.append(lda.get_document_topics(corpus[i]))
+    #
+    # print('LDA')
+    # order = [[0, len1], [len1, len1 + len2], [len1 + len2, len(text)]]
+    #
+    # for i in range(3):
+    #     score = [0 for i in range(0, 20)]
+    #     for doc in scores[order[i][0]:order[i][1]]:
+    #         for item in doc:
+    #             score[item[0]] += item[1]
+    #     avg = np.array(score)/(order[i][1] - order[i][0])
+    #     print(avg)
+    #
+    # for topic in lda.print_topics(num_topics=20, num_words=10):
+    #     print(topic)
 
 
 if __name__ == '__main__':
@@ -231,85 +318,122 @@ if __name__ == '__main__':
 
     # part 1 - IR evaluation
 
-    docs_retrieved = {}
-    docs_relevant = {}
-    all_systems = set([])
-
-    with open(QRELS) as f:
-        for line in f.readlines():
-            query_id, doc_id, relevance = line.split(',')
-            if query_id not in docs_relevant:
-                docs_relevant[query_id] = []
-            details = tuple([doc_id, relevance])
-            docs_relevant[query_id].append(details)
-
-    dict_systems = {}
-
-    with open(SYSTEM_RESULTS) as f:
-        for line in f.readlines():
-            system_number, query_number, doc_number, rank_of_doc, score = line.split(',')
-
-            if system_number not in dict_systems:
-                dict_systems[system_number] = dict()
-
-            if query_number not in dict_systems[system_number]:
-                dict_systems[system_number][query_number] = []
-
-            dict_systems[system_number][query_number].append([doc_number, rank_of_doc, score])
-            all_systems.add(system_number)
-
-    ir_eval_scores = []
-    systems_avg_scores = []
-    res = []
-
-    all_systems = sorted(all_systems)
-
-    for system in all_systems:
-        docs_retrieved = dict_systems.get(system)
-        ir_eval_scores = []
-        for query in dict_systems[system].keys():
-            first_10 = [docs_retrieved[query][i][0] for i in range(10)]
-            first_20 = [docs_retrieved[query][i][0] for i in range(20)]
-            first_50 = [docs_retrieved[query][i][0] for i in range(50)]
-
-            relevant = [docs_relevant[query][i][0] for i in range(len(docs_relevant[query]))]
-
-            rprec_retrieved = [docs_retrieved[query][i][0] for i in range(len(relevant))]
-
-            precision_10 = precision_score(first_10, relevant)
-            recall_50 = recall_score(first_50, relevant)
-            rprecision = precision_score(rprec_retrieved, relevant)
-
-            ap = avg_precision_score(docs_retrieved[query], relevant)
-
-            ndcg_10 = nDCG(docs_retrieved[query][:10], docs_relevant[query])
-            ndcg_20 = nDCG(docs_retrieved[query][:20], docs_relevant[query])
-
-            ir_eval_scores.append([precision_10, recall_50, rprecision, ap, ndcg_10, ndcg_20])
-            res.append([system, query, precision_10, recall_50, rprecision, ap, ndcg_10, ndcg_20])
-
-        systems_avg_scores = np.mean(np.array(ir_eval_scores), axis=0)
-        res.append([system, 'mean', systems_avg_scores[0], systems_avg_scores[1], systems_avg_scores[2],
-                    systems_avg_scores[3], systems_avg_scores[4], systems_avg_scores[5]])
-
-    write_to_file(res)
+    # docs_retrieved = {}
+    # docs_relevant = {}
+    # all_systems = set([])
+    #
+    # with open(QRELS) as f:
+    #     for line in f.readlines():
+    #         query_id, doc_id, relevance = line.split(',')
+    #         if query_id not in docs_relevant:
+    #             docs_relevant[query_id] = []
+    #         details = tuple([doc_id, relevance])
+    #         docs_relevant[query_id].append(details)
+    #
+    # dict_systems = {}
+    #
+    # with open(SYSTEM_RESULTS) as f:
+    #     for line in f.readlines():
+    #         system_number, query_number, doc_number, rank_of_doc, score = line.split(',')
+    #
+    #         if system_number not in dict_systems:
+    #             dict_systems[system_number] = dict()
+    #
+    #         if query_number not in dict_systems[system_number]:
+    #             dict_systems[system_number][query_number] = []
+    #
+    #         dict_systems[system_number][query_number].append([doc_number, rank_of_doc, score])
+    #         all_systems.add(system_number)
+    #
+    # ir_eval_scores = []
+    # systems_avg_scores = []
+    # res = []
+    #
+    # all_systems = sorted(all_systems)
+    #
+    # for system in all_systems:
+    #     docs_retrieved = dict_systems.get(system)
+    #     ir_eval_scores = []
+    #     for query in dict_systems[system].keys():
+    #         first_10 = [docs_retrieved[query][i][0] for i in range(10)]
+    #         first_20 = [docs_retrieved[query][i][0] for i in range(20)]
+    #         first_50 = [docs_retrieved[query][i][0] for i in range(50)]
+    #
+    #         relevant = [docs_relevant[query][i][0] for i in range(len(docs_relevant[query]))]
+    #
+    #         rprec_retrieved = [docs_retrieved[query][i][0] for i in range(len(relevant))]
+    #
+    #         precision_10 = precision_score(first_10, relevant)
+    #         recall_50 = recall_score(first_50, relevant)
+    #         rprecision = precision_score(rprec_retrieved, relevant)
+    #
+    #         ap = avg_precision_score(docs_retrieved[query], relevant)
+    #
+    #         ndcg_10 = nDCG(docs_retrieved[query][:10], docs_relevant[query])
+    #         ndcg_20 = nDCG(docs_retrieved[query][:20], docs_relevant[query])
+    #
+    #         ir_eval_scores.append([precision_10, recall_50, rprecision, ap, ndcg_10, ndcg_20])
+    #         res.append([system, query, precision_10, recall_50, rprecision, ap, ndcg_10, ndcg_20])
+    #
+    #     systems_avg_scores = np.mean(np.array(ir_eval_scores), axis=0)
+    #     res.append([system, 'mean', systems_avg_scores[0], systems_avg_scores[1], systems_avg_scores[2],
+    #                 systems_avg_scores[3], systems_avg_scores[4], systems_avg_scores[5]])
+    #
+    # write_to_file(res)
 
     # part 2 - text analysis
 
-    dict_corpora = {}
-    vocab = set([])
-    categories = set([])
+    vocab = []
+    allWords = []
 
     with open(TRAIN_AND_DEV) as f:
-        tsv_file = csv.reader(f, delimiter='\t')
-        for line in tsv_file:
-            if line[0] not in dict_corpora:
-                dict_corpora[line[0]] = set([])
-            words = preprocess(line[1:])
-            for word in words:
-                dict_corpora[line[0]].add(word)
-                vocab.add(word)
+        for line in f.readlines():
+            corpora, verses = line.strip().split('\t')
 
-    WorldLevel(vocab)
+            if corpora not in dict_corpora:
+                dict_corpora.setdefault(corpora, []).append(verses)
+            else:
+                dict_corpora[corpora].append(verses)
+
+        for key in dict_corpora:
+            for index, verses in enumerate(dict_corpora[key]):
+                words = preprocess(verses)
+                dict_corpora[key][index] = words
+                vocab.extend(words)
+
+    allWords = set(vocab)
+    # WorldLevel(allWords)
+
+    # run LDA model on three corpora
+    lda, topic_dic_Quran, topic_dic_NT, topic_dic_OT = TopicLevel()
+    # rank the topics for each corpus
+
+    topic_ranked_NT = sorted(topic_dic_NT.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)[:20]
+
+    topic_ranked_OT = sorted(topic_dic_OT.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)[:20]
+
+    topic_ranked_Quran = sorted(topic_dic_Quran.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)[:20]
+
+    print("ordered topics for NT")
+    for topic in topic_ranked_NT:
+        print("topic_id: " + str(topic[0]) + ", score: " + str(topic[1]))
+        print(lda.print_topic(topic[0]))
+
+    print("ordered topics for OT")
+    for topic in topic_ranked_OT:
+        print("topic_id: " + str(topic[0]) + ", score: " + str(topic[1]))
+        print(lda.print_topic(topic[0]))
+
+    print("ordered topics for quran")
+    for topic in topic_ranked_Quran:
+        print("topic_id: " + str(topic[0]) + ", score: " + str(topic[1]))
+        print(lda.print_topic(topic[0]))
+
+    # part 3 - text classification
+
+
+
+
+
 
 

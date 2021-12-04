@@ -318,68 +318,68 @@ if __name__ == '__main__':
 
     # part 1 - IR evaluation
 
-    # docs_retrieved = {}
-    # docs_relevant = {}
-    # all_systems = set([])
-    #
-    # with open(QRELS) as f:
-    #     for line in f.readlines():
-    #         query_id, doc_id, relevance = line.split(',')
-    #         if query_id not in docs_relevant:
-    #             docs_relevant[query_id] = []
-    #         details = tuple([doc_id, relevance])
-    #         docs_relevant[query_id].append(details)
-    #
-    # dict_systems = {}
-    #
-    # with open(SYSTEM_RESULTS) as f:
-    #     for line in f.readlines():
-    #         system_number, query_number, doc_number, rank_of_doc, score = line.split(',')
-    #
-    #         if system_number not in dict_systems:
-    #             dict_systems[system_number] = dict()
-    #
-    #         if query_number not in dict_systems[system_number]:
-    #             dict_systems[system_number][query_number] = []
-    #
-    #         dict_systems[system_number][query_number].append([doc_number, rank_of_doc, score])
-    #         all_systems.add(system_number)
-    #
-    # ir_eval_scores = []
-    # systems_avg_scores = []
-    # res = []
-    #
-    # all_systems = sorted(all_systems)
-    #
-    # for system in all_systems:
-    #     docs_retrieved = dict_systems.get(system)
-    #     ir_eval_scores = []
-    #     for query in dict_systems[system].keys():
-    #         first_10 = [docs_retrieved[query][i][0] for i in range(10)]
-    #         first_20 = [docs_retrieved[query][i][0] for i in range(20)]
-    #         first_50 = [docs_retrieved[query][i][0] for i in range(50)]
-    #
-    #         relevant = [docs_relevant[query][i][0] for i in range(len(docs_relevant[query]))]
-    #
-    #         rprec_retrieved = [docs_retrieved[query][i][0] for i in range(len(relevant))]
-    #
-    #         precision_10 = precision_score(first_10, relevant)
-    #         recall_50 = recall_score(first_50, relevant)
-    #         rprecision = precision_score(rprec_retrieved, relevant)
-    #
-    #         ap = avg_precision_score(docs_retrieved[query], relevant)
-    #
-    #         ndcg_10 = nDCG(docs_retrieved[query][:10], docs_relevant[query])
-    #         ndcg_20 = nDCG(docs_retrieved[query][:20], docs_relevant[query])
-    #
-    #         ir_eval_scores.append([precision_10, recall_50, rprecision, ap, ndcg_10, ndcg_20])
-    #         res.append([system, query, precision_10, recall_50, rprecision, ap, ndcg_10, ndcg_20])
-    #
-    #     systems_avg_scores = np.mean(np.array(ir_eval_scores), axis=0)
-    #     res.append([system, 'mean', systems_avg_scores[0], systems_avg_scores[1], systems_avg_scores[2],
-    #                 systems_avg_scores[3], systems_avg_scores[4], systems_avg_scores[5]])
-    #
-    # write_to_file(res)
+    docs_retrieved = {}
+    docs_relevant = {}
+    all_systems = set([])
+
+    with open(QRELS) as f:
+        for line in f.readlines():
+            query_id, doc_id, relevance = line.split(',')
+            if query_id not in docs_relevant:
+                docs_relevant[query_id] = []
+            details = tuple([doc_id, relevance])
+            docs_relevant[query_id].append(details)
+
+    dict_systems = {}
+
+    with open(SYSTEM_RESULTS) as f:
+        for line in f.readlines():
+            system_number, query_number, doc_number, rank_of_doc, score = line.split(',')
+
+            if system_number not in dict_systems:
+                dict_systems[system_number] = dict()
+
+            if query_number not in dict_systems[system_number]:
+                dict_systems[system_number][query_number] = []
+
+            dict_systems[system_number][query_number].append([doc_number, rank_of_doc, score])
+            all_systems.add(system_number)
+
+    ir_eval_scores = []
+    systems_avg_scores = []
+    res = []
+
+    all_systems = sorted(all_systems)
+
+    for system in all_systems:
+        docs_retrieved = dict_systems.get(system)
+        ir_eval_scores = []
+        for query in dict_systems[system].keys():
+            first_10 = [docs_retrieved[query][i][0] for i in range(10)]
+            first_20 = [docs_retrieved[query][i][0] for i in range(20)]
+            first_50 = [docs_retrieved[query][i][0] for i in range(50)]
+
+            relevant = [docs_relevant[query][i][0] for i in range(len(docs_relevant[query]))]
+
+            rprec_retrieved = [docs_retrieved[query][i][0] for i in range(len(relevant))]
+
+            precision_10 = precision_score(first_10, relevant)
+            recall_50 = recall_score(first_50, relevant)
+            rprecision = precision_score(rprec_retrieved, relevant)
+
+            ap = avg_precision_score(docs_retrieved[query], relevant)
+
+            ndcg_10 = nDCG(docs_retrieved[query][:10], docs_relevant[query])
+            ndcg_20 = nDCG(docs_retrieved[query][:20], docs_relevant[query])
+
+            ir_eval_scores.append([precision_10, recall_50, rprecision, ap, ndcg_10, ndcg_20])
+            res.append([system, query, precision_10, recall_50, rprecision, ap, ndcg_10, ndcg_20])
+
+        systems_avg_scores = np.mean(np.array(ir_eval_scores), axis=0)
+        res.append([system, 'mean', systems_avg_scores[0], systems_avg_scores[1], systems_avg_scores[2],
+                    systems_avg_scores[3], systems_avg_scores[4], systems_avg_scores[5]])
+
+    write_to_file(res)
 
     # part 2 - text analysis
 
@@ -402,12 +402,12 @@ if __name__ == '__main__':
                 vocab.extend(words)
 
     allWords = set(vocab)
-    # WorldLevel(allWords)
+    WorldLevel(allWords)
 
     # run LDA model on three corpora
     lda, topic_dic_Quran, topic_dic_NT, topic_dic_OT = TopicLevel()
-    # rank the topics for each corpus
 
+    # rank the topics for each corpus
     topic_ranked_NT = sorted(topic_dic_NT.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)[:20]
 
     topic_ranked_OT = sorted(topic_dic_OT.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)[:20]

@@ -1,5 +1,7 @@
 import os
 import re
+from random import random
+
 import numpy as np
 import urllib.request
 import sklearn
@@ -168,6 +170,8 @@ def nDCG(retrieved, relevant):
 
 def write_to_file(elems_to_print):
     with open('./eval_results/ir_eval.csv', 'w') as f:
+        hdr = "system_number,query_number,P@10,R@50,r-precision,AP,nDCG@10,nDCG@20\n"
+        f.write(hdr)
         for elem in elems_to_print:
             f.write(elem[0][0])
             for index in range(1, len(elem)):
@@ -195,32 +199,36 @@ def WorldLevel(allWords):
                 if term in verses:
                     N11 += 1
 
-            if N11 != 0:
-                N01 = targetlen - N11
+            N01 = targetlen - N11
 
-                N10 = 0
-                for corpora in order[1:]:
-                    for item in dict_corpora[corpora]:
-                        if term in item:
-                            N10 += 1
-                N00 = otherlen - N10
+            N10 = 0
+            for corpora in order[1:]:
+                for item in dict_corpora[corpora]:
+                    if term in item:
+                        N10 += 1
+            N00 = otherlen - N10
 
-                mi = compute_mutual_info(N, N00, N01, N11, N10)
+            mi = compute_mutual_info(N, N00, N01, N11, N10)
+            if N11 != 00:
                 chi = compute_chi_squared(N, N00, N01, N11, N10)
-
-                onemires.append([term, mi])
                 onechires.append([term, chi])
+
+            onemires.append([term, mi])
 
         mires.append(sorted(onemires, key=lambda x: x[-1], reverse=-True))
         chires.append(sorted(onechires, key=lambda x: x[-1], reverse=-True))
 
     print("MI")
-    for each in mires:
-        print(each[:10])
+    for ind, each in enumerate(mires):
+        print(str(ind) + "10 top words for this category are:")
+        for t in each[:10]:
+            print(t[0] + ":" + str(round(t[1], 3)) + ", ")
 
     print("CHI")
-    for each in chires:
-        print(each[:10])
+    for ind, each in enumerate(chires):
+        print(str(ind) + "10 top words for this category are:")
+        for t in each[:10]:
+            print(t[0] + ":" + str(round(t[1], 3)) + ", ")
 
 
 def TopicLevel():
@@ -354,68 +362,68 @@ if __name__ == '__main__':
 
     # part 1 - IR evaluation
 
-    docs_retrieved = {}
-    docs_relevant = {}
-    all_systems = set([])
-
-    with open(QRELS) as f:
-        for line in f.readlines():
-            query_id, doc_id, relevance = line.split(',')
-            if query_id not in docs_relevant:
-                docs_relevant[query_id] = []
-            details = tuple([doc_id, relevance])
-            docs_relevant[query_id].append(details)
-
-    dict_systems = {}
-
-    with open(SYSTEM_RESULTS) as f:
-        for line in f.readlines():
-            system_number, query_number, doc_number, rank_of_doc, score = line.split(',')
-
-            if system_number not in dict_systems:
-                dict_systems[system_number] = dict()
-
-            if query_number not in dict_systems[system_number]:
-                dict_systems[system_number][query_number] = []
-
-            dict_systems[system_number][query_number].append([doc_number, rank_of_doc, score])
-            all_systems.add(system_number)
-
-    ir_eval_scores = []
-    systems_avg_scores = []
-    res = []
-
-    all_systems = sorted(all_systems)
-
-    for system in all_systems:
-        docs_retrieved = dict_systems.get(system)
-        ir_eval_scores = []
-        for query in dict_systems[system].keys():
-            first_10 = [docs_retrieved[query][i][0] for i in range(10)]
-            first_20 = [docs_retrieved[query][i][0] for i in range(20)]
-            first_50 = [docs_retrieved[query][i][0] for i in range(50)]
-
-            relevant = [docs_relevant[query][i][0] for i in range(len(docs_relevant[query]))]
-
-            rprec_retrieved = [docs_retrieved[query][i][0] for i in range(len(relevant))]
-
-            precision_10 = precision_score(first_10, relevant)
-            recall_50 = recall_score(first_50, relevant)
-            rprecision = precision_score(rprec_retrieved, relevant)
-
-            ap = avg_precision_score(docs_retrieved[query], relevant)
-
-            ndcg_10 = nDCG(docs_retrieved[query][:10], docs_relevant[query])
-            ndcg_20 = nDCG(docs_retrieved[query][:20], docs_relevant[query])
-
-            ir_eval_scores.append([precision_10, recall_50, rprecision, ap, ndcg_10, ndcg_20])
-            res.append([system, query, precision_10, recall_50, rprecision, ap, ndcg_10, ndcg_20])
-
-        systems_avg_scores = np.mean(np.array(ir_eval_scores), axis=0)
-        res.append([system, 'mean', systems_avg_scores[0], systems_avg_scores[1], systems_avg_scores[2],
-                    systems_avg_scores[3], systems_avg_scores[4], systems_avg_scores[5]])
-
-    write_to_file(res)
+    # docs_retrieved = {}
+    # docs_relevant = {}
+    # all_systems = set([])
+    #
+    # with open(QRELS) as f:
+    #     for line in f.readlines():
+    #         query_id, doc_id, relevance = line.split(',')
+    #         if query_id not in docs_relevant:
+    #             docs_relevant[query_id] = []
+    #         details = tuple([doc_id, relevance])
+    #         docs_relevant[query_id].append(details)
+    #
+    # dict_systems = {}
+    #
+    # with open(SYSTEM_RESULTS) as f:
+    #     for line in f.readlines():
+    #         system_number, query_number, doc_number, rank_of_doc, score = line.split(',')
+    #
+    #         if system_number not in dict_systems:
+    #             dict_systems[system_number] = dict()
+    #
+    #         if query_number not in dict_systems[system_number]:
+    #             dict_systems[system_number][query_number] = []
+    #
+    #         dict_systems[system_number][query_number].append([doc_number, rank_of_doc, score])
+    #         all_systems.add(system_number)
+    #
+    # ir_eval_scores = []
+    # systems_avg_scores = []
+    # res = []
+    #
+    # all_systems = sorted(all_systems)
+    #
+    # for system in all_systems:
+    #     docs_retrieved = dict_systems.get(system)
+    #     ir_eval_scores = []
+    #     for query in dict_systems[system].keys():
+    #         first_10 = [docs_retrieved[query][i][0] for i in range(10)]
+    #         first_20 = [docs_retrieved[query][i][0] for i in range(20)]
+    #         first_50 = [docs_retrieved[query][i][0] for i in range(50)]
+    #
+    #         relevant = [docs_relevant[query][i][0] for i in range(len(docs_relevant[query]))]
+    #
+    #         rprec_retrieved = [docs_retrieved[query][i][0] for i in range(len(relevant))]
+    #
+    #         precision_10 = precision_score(first_10, relevant)
+    #         recall_50 = recall_score(first_50, relevant)
+    #         rprecision = precision_score(rprec_retrieved, relevant)
+    #
+    #         ap = avg_precision_score(docs_retrieved[query], relevant)
+    #
+    #         ndcg_10 = nDCG(docs_retrieved[query][:10], docs_relevant[query])
+    #         ndcg_20 = nDCG(docs_retrieved[query][:20], docs_relevant[query])
+    #
+    #         ir_eval_scores.append([precision_10, recall_50, rprecision, ap, ndcg_10, ndcg_20])
+    #         res.append([system, query, precision_10, recall_50, rprecision, ap, ndcg_10, ndcg_20])
+    #
+    #     systems_avg_scores = np.mean(np.array(ir_eval_scores), axis=0)
+    #     res.append([system, 'mean', systems_avg_scores[0], systems_avg_scores[1], systems_avg_scores[2],
+    #                 systems_avg_scores[3], systems_avg_scores[4], systems_avg_scores[5]])
+    #
+    # write_to_file(res)
 
     # part 2 - text analysis
 
@@ -441,15 +449,15 @@ if __name__ == '__main__':
     # WorldLevel(allWords)
 
     # run LDA model on three corpora
-    # lda, topic_dic_Quran, topic_dic_NT, topic_dic_OT = TopicLevel()
+    lda, topic_dic_Quran, topic_dic_NT, topic_dic_OT = TopicLevel()
 
     # rank the topics for each corpus
-    # topic_ranked_NT = sorted(topic_dic_NT.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)[:20]
-    #
-    # topic_ranked_OT = sorted(topic_dic_OT.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)[:20]
-    #
-    # topic_ranked_Quran = sorted(topic_dic_Quran.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)[:20]
-    #
+    topic_ranked_NT = sorted(topic_dic_NT.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)[:20]
+
+    topic_ranked_OT = sorted(topic_dic_OT.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)[:20]
+
+    topic_ranked_Quran = sorted(topic_dic_Quran.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)[:20]
+
     # print("ordered topics for NT")
     # for topic in topic_ranked_NT:
     #     print("topic_id: " + str(topic[0]) + ", score: " + str(topic[1]))
@@ -467,23 +475,48 @@ if __name__ == '__main__':
 
     # part 3 - text classification
 
-    training_data = open(TRAIN_AND_DEV, encoding="latin-1").read()
+    all_data = open(TRAIN_AND_DEV, encoding="latin-1").read()
     test_data = open(TEST, encoding="latin-1").read()
 
-    preprocessed_training_data, training_categories, train_vocab = preprocess_data(training_data)
-    preprocessed_test_data, test_categories, test_vocab = preprocess_data(test_data)
+    lines = all_data.split('\n')
+    data_parsed = []
 
-    print(f"Training Data has {len(preprocessed_training_data)} " +
-          f"documents and vocab size of {len(train_vocab)}")
-    print(f"Test Data has {len(preprocessed_test_data)} " +
-          f"documents and vocab size of {len(test_vocab)}")
-    print(f"There were {len(set(training_categories))} " +
-          f"categories in the training data and {len(set(test_categories))} in the test.")
+    for line in lines:
+        line = line.strip()
+        if line:
+            category, verses = line.split('\t')
+            data_parsed.append((verses, category))
 
-    print(collections.Counter(training_categories).most_common())
+    data_parsed.sort(key=lambda y: y[0])  # fixed order before shuffling
+    random.seed(230)
+    random.shuffle(data_parsed)  # shuffles the ordering of docs (deterministic given the chosen seed)
 
-    # convert the vocab to a word id lookup dictionary
-    # anything not in this will be considered "out of vocabulary" OOV
+    split_1 = int(0.9 * len(data_parsed))
+
+    train_docs = data_parsed[:split_1]
+    dev_docs = data_parsed[split_1:]
+
+    preprocessed_training_data = []
+    training_categories = []
+
+    for t in train_docs:
+        preprocessed_training_data.append(t[0])
+        training_categories.append(t[1])
+
+    preprocessed_training_data, training_categories, train_vocab = preprocess_data(train_docs)
+    preprocessed_test_data, test_categories, test_vocab = preprocess_data(dev_docs)
+
+    # print(f"Training Data has {len(preprocessed_training_data)} " +
+    #       f"documents and vocab size of {len(train_vocab)}")
+    # print(f"Test Data has {len(preprocessed_test_data)} " +
+    #       f"documents and vocab size of {len(test_vocab)}")
+    # print(f"There were {len(set(training_categories))} " +
+    #       f"categories in the training data and {len(set(test_categories))} in the test.")
+
+    # print(collections.Counter(training_categories).most_common())
+
+    # # convert the vocab to a word id lookup dictionary
+    # # anything not in this will be considered "out of vocabulary" OOV
 
     word2id = {}
     for word_id, word in enumerate(train_vocab):
@@ -499,50 +532,58 @@ if __name__ == '__main__':
     model = sklearn.svm.LinearSVC(C=1000)
     model.fit(X_train, y_train)
 
-    # make a prediction
-    sample_text = ['christ', 'israel', 'jesus', 'god', 'a', 'resurrection']
-    # create just a single vector as input (as a 1 x V matrix)
-    sample_x_in = scipy.sparse.dok_matrix((1, len(word2id) + 1))
-    for word in sample_text:
-        sample_x_in[0, word2id[word]] += 1
-
-    # what does the example document look like?
-    print(sample_x_in)
-    prediction = model.predict(sample_x_in)
-    # what category was predicted?
-    print("Prediction was:", prediction[0])
-    # what category was that?
-    print(cat2id)
-
     y_train_predictions = model.predict(X_train)
     accuracy = compute_accuracy(y_train_predictions, y_train)
-    print("Accuracy:", accuracy)
+    print("Training accuracy svm baseline:", accuracy)
 
     X_test = convert_to_bow_matrix(preprocessed_test_data, word2id)
     y_test = [cat2id[cat] for cat in test_categories]
 
     y_test_predictions = model.predict(X_test)
     accuracy = compute_accuracy(y_test_predictions, y_test)
-    print("Accuracy:", accuracy)
+    print("Test accuracy svm baseline:", accuracy)
 
     cat_names = []
     for cat, cid in sorted(cat2id.items(), key=lambda x: x[1]):
         cat_names.append(cat)
     print(classification_report(y_test, y_test_predictions, target_names=cat_names))
 
-    baseline_predictions = [cat2id['NT']] * len(y_test)
-    baseline_accuracy = compute_accuracy(baseline_predictions, y_train)
-    print("Accuracy:", baseline_accuracy)
+    # model = sklearn.ensemble.RandomForestClassifier(n_estimators=1000, random_state=0)
+    # model.fit(X_train, y_train)
+    #
+    # y_train_predictions = model.predict(X_train)
+    # print("Train accuracy random_forest was:", compute_accuracy(y_train_predictions, y_train))
+    # y_test_predictions = model.predict(X_test)
+    # print("Test accuracy random_forest was:", compute_accuracy(y_test_predictions, y_test))
+    #
+    # cat_names = []
+    # for cat, cid in sorted(cat2id.items(), key=lambda x: x[1]):
+    #     cat_names.append(cat)
+    # print(classification_report(y_test, y_test_predictions, target_names=cat_names))
 
-    model = sklearn.ensemble.RandomForestClassifier()
-    model.fit(X_train, y_train)
+    # trying haha split into train, dev and test
 
-    y_train_predictions = model.predict(X_train)
-    print("Train accuracy was:", compute_accuracy(y_train_predictions, y_train))
-    y_test_predictions = model.predict(X_test)
-    print("Test accuracy was:", compute_accuracy(y_test_predictions, y_test))
 
-    cat_names = []
-    for cat, cid in sorted(cat2id.items(), key=lambda x: x[1]):
-        cat_names.append(cat)
-    print(classification_report(y_test, y_test_predictions, target_names=cat_names))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

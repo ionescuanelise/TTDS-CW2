@@ -1,26 +1,22 @@
 import os
 import re
-from random import random
+import string
+import urllib.request
 
 import numpy as np
-import urllib.request
+import pandas as pd
+import scipy
 import sklearn
-from nltk.stem import PorterStemmer
 from gensim.corpora.dictionary import Dictionary
 from gensim.models import LdaModel
-
-import collections
-import string
-
-# import this for storing our BOW format
-import scipy
+from nltk.stem import PorterStemmer
 from scipy import sparse
 from sklearn import svm
-from sklearn import ensemble
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report
 
 ps = PorterStemmer()
-mires = []
+mi_res = []
 dict_corpora = {}
 
 
@@ -36,37 +32,6 @@ def download_file(url, file_name):
 def create_directory(directory):
     if not os.path.isdir(directory):
         os.makedirs(directory)
-
-
-def to_lower_case(input_tokens):
-    return [token.lower() for token in input_tokens]
-
-
-def remove_stopwords(input_tokens):
-    return [token for token in input_tokens if token not in stop_words]
-
-
-def apply_stemming(input_tokens):
-    return [ps.stem(token) for token in input_tokens]
-
-
-def tokenize(input_text):
-    # split text by whitespace into words by replacing first any non-letter / non-digit character with a space
-    # \w matches any [a-zA-Z0-9_] characters
-    # \s matches any whitespace characters
-    return re.sub(r"[^\w\s]|_", " ", input_text).split()
-
-
-def preprocess(input_text):
-    initial_words = tokenize(input_text)
-    # convert text to lowercase
-    tokens = to_lower_case(initial_words)
-    # remove the stop words
-    text_without_sw = remove_stopwords(tokens)
-    # apply stemming
-    stemmed_words = apply_stemming(text_without_sw)
-
-    return stemmed_words
 
 
 def compute_mutual_info(N, N00, N01, N11, N10):
@@ -184,48 +149,48 @@ def write_to_file(elems_to_print):
 
 def WorldLevel(allWords):
     orders = [['Quran', 'OT', 'NT'], ['OT', 'Quran', 'NT'], ['NT', 'Quran', 'OT']]
-    chires = []
+    chi_res = []
 
     for order in orders:
-        targetlen = len(dict_corpora[order[0]])
-        otherlen = len(dict_corpora[order[1]]) + len(dict_corpora[order[2]])
-        N = targetlen + otherlen
-        onemires = []
-        onechires = []
+        N = len(dict_corpora[order[0]]) + len(dict_corpora[order[1]]) + len(dict_corpora[order[2]])
+
+        temp_mi = []
+        temp_chi = []
 
         for term in allWords:
             N11 = 0
+
             for verses in dict_corpora[order[0]]:
                 if term in verses:
                     N11 += 1
 
-            N01 = targetlen - N11
-
+            N01 = len(dict_corpora[order[0]]) - N11
             N10 = 0
+
             for corpora in order[1:]:
                 for item in dict_corpora[corpora]:
                     if term in item:
                         N10 += 1
-            N00 = otherlen - N10
+
+            N00 = len(dict_corpora[order[1]]) + len(dict_corpora[order[2]]) - N10
 
             mi = compute_mutual_info(N, N00, N01, N11, N10)
-            if N11 != 00:
-                chi = compute_chi_squared(N, N00, N01, N11, N10)
-                onechires.append([term, chi])
+            chi = compute_chi_squared(N, N00, N01, N11, N10)
 
-            onemires.append([term, mi])
+            temp_chi.append([term, chi])
+            temp_mi.append([term, mi])
 
-        mires.append(sorted(onemires, key=lambda x: x[-1], reverse=-True))
-        chires.append(sorted(onechires, key=lambda x: x[-1], reverse=-True))
+        mi_res.append(sorted(temp_mi, key=lambda x: x[-1], reverse=-True))
+        chi_res.append(sorted(temp_chi, key=lambda x: x[-1], reverse=-True))
 
     print("MI")
-    for ind, each in enumerate(mires):
+    for ind, each in enumerate(mi_res):
         print(str(ind) + "10 top words for this category are:")
         for t in each[:10]:
             print(t[0] + ":" + str(round(t[1], 3)) + ", ")
 
     print("CHI")
-    for ind, each in enumerate(chires):
+    for ind, each in enumerate(chi_res):
         print(str(ind) + "10 top words for this category are:")
         for t in each[:10]:
             print(t[0] + ":" + str(round(t[1], 3)) + ", ")
@@ -294,27 +259,63 @@ def preprocess_data(data):
     chars_to_remove = re.compile(f'[{string.punctuation}]')
 
     documents = []
-    categories = []
     vocab = set([])
 
-    lines = data.split('\n')
-
-    for line in lines:
+    for line in data:
         # make a dictionary for each document
         # word_id -> count (could also be tf-idf score, etc.)
         line = line.strip()
         if line:
-            # split on tabs, we have 3 columns in this tsv format file
-            category, verses = line.split('\t')
-
-            words = chars_to_remove.sub('', verses).lower().split()
+            words = chars_to_remove.sub('', line).lower().split()
             for word in words:
                 vocab.add(word)
-
             documents.append(words)
-            categories.append(category)
 
-    return documents, categories, vocab
+    return documents, vocab
+
+
+def remove_stopwords(input_tokens):
+    return [token for token in input_tokens if token not in stop_words]
+
+
+def apply_stemming(input_tokens):
+    return [ps.stem(token) for token in input_tokens]
+
+
+def light_preprocess_data(data):
+    chars_to_remove = re.compile(f'[{string.punctuation}]')
+
+    documents = []
+    vocab = set([])
+
+    for line in data:
+        line = line.strip()
+        if line:
+            words = chars_to_remove.sub('', line).split()
+            for word in words:
+                vocab.add(word)
+            documents.append(words)
+
+    return documents, vocab
+
+
+def extreme_preprocess_data(data):
+    chars_to_remove = re.compile(f'[{string.punctuation}]')
+
+    documents = []
+    vocab = set([])
+
+    for line in data:
+        # make a dictionary for each document
+        # word_id -> count (could also be tf-idf score, etc.)
+        line = line.strip()
+        if line:
+            words = apply_stemming(remove_stopwords(chars_to_remove.sub('', line).lower().split()))
+            for word in words:
+                vocab.add(word)
+            documents.append(words)
+
+    return documents, vocab
 
 
 def convert_to_bow_matrix(preprocessed_data, word2id):
@@ -329,7 +330,7 @@ def convert_to_bow_matrix(preprocessed_data, word2id):
         for word in doc:
             # default is 0, so just add to the count for this word in this doc
             # if the word is oov, increment the oov_index
-            X[doc_id, word2id.get(word, oov_index)] += 1
+            X[doc_id, word2id.get(word, oov_index)] += (1 / len(doc))
 
     return X
 
@@ -343,6 +344,195 @@ def compute_accuracy(predictions, true_values):
     return num_correct / num_total
 
 
+def convert_to_bow_matrix_TFIDF(preprocessed_data, word2id):
+    words_positions = {}
+
+    for doc_id, line in enumerate(preprocessed_data):
+        words_positions[doc_id] = list(zip(line, range(0, len(line))))
+
+    inverted_index = create_inverted_index(words_positions)
+
+    # matrix size is number of docs x vocab size + 1 (for OOV)
+    matrix_size = (len(preprocessed_data), len(word2id) + 1)
+    oov_index = len(word2id)
+    # matrix indexed by [doc_id, token_id]
+    X = scipy.sparse.dok_matrix(matrix_size)
+
+    for doc_id, doc in enumerate(preprocessed_data):
+        for word in doc:
+            if doc_id in inverted_index[word]:
+                # Frequency of term in this document
+                tf = len(inverted_index[word][doc_id])
+                # Number of documents in which the term appeared
+                df = len(inverted_index[word])
+                X[doc_id, word2id.get(word, oov_index)] += (1 + np.log10(tf)) * np.log10(len(preprocessed_data) / df)
+
+    return X
+
+
+def create_inverted_index(words_positions):
+    inverted_index = {}
+    for docId, values in words_positions.items():
+        for (word, position) in values:
+            if not inverted_index.get(word):
+                inverted_index[word] = dict()
+            if not inverted_index[word].get(docId):
+                inverted_index[word][docId] = []
+            inverted_index[word][docId].append(position)
+    return inverted_index
+
+
+def baseline_TFIDF(word2id, cat2id, train_data, dev_data, train_cat, dev_cat, c, mode):
+    X_train = convert_to_bow_matrix_TFIDF(train_data, word2id)
+    y_train = [cat2id[cat] for cat in train_cat]
+
+    model = sklearn.svm.SVC(C=c)
+    model.fit(X_train, y_train)
+
+    y_train_predictions = model.predict(X_train)
+    accuracy = compute_accuracy(y_train_predictions, y_train)
+    print("Training accuracy " + mode, accuracy)
+
+    cat_names = []
+    for cat, cid in sorted(cat2id.items(), key=lambda x: x[1]):
+        cat_names.append(cat)
+    print(classification_report(y_train, y_train_predictions, target_names=cat_names, digits=3))
+
+    X_dev = convert_to_bow_matrix_TFIDF(dev_data, word2id)
+    y_dev = [cat2id[cat] for cat in dev_cat]
+
+    y_dev_predictions = model.predict(X_dev)
+    accuracy = compute_accuracy(y_dev_predictions, y_dev)
+    print("Dev accuracy " + mode, accuracy)
+
+    cat_names = []
+    for cat, cid in sorted(cat2id.items(), key=lambda x: x[1]):
+        cat_names.append(cat)
+    print(classification_report(y_dev, y_dev_predictions, target_names=cat_names, digits=3))
+
+
+def baseline(word2id, cat2id, train_data, dev_data, test_data, train_cat, dev_cat, test_cat, c, mode):
+    X_train = convert_to_bow_matrix(train_data, word2id)
+    y_train = [cat2id[cat] for cat in train_cat]
+
+    model = sklearn.svm.SVC(C=c)
+    model.fit(X_train, y_train)
+
+    y_train_predictions = model.predict(X_train)
+    accuracy = compute_accuracy(y_train_predictions, y_train)
+    print("Training accuracy " + mode, accuracy)
+
+    cat_names = []
+    for cat, cid in sorted(cat2id.items(), key=lambda x: x[1]):
+        cat_names.append(cat)
+    print(classification_report(y_train, y_train_predictions, target_names=cat_names, digits=3))
+
+    X_dev = convert_to_bow_matrix(dev_data, word2id)
+    y_dev = [cat2id[cat] for cat in dev_cat]
+
+    y_dev_predictions = model.predict(X_dev)
+    accuracy = compute_accuracy(y_dev_predictions, y_dev)
+    print("Dev accuracy " + mode, accuracy)
+
+    cat_names = []
+    for cat, cid in sorted(cat2id.items(), key=lambda x: x[1]):
+        cat_names.append(cat)
+    print(classification_report(y_dev, y_dev_predictions, target_names=cat_names, digits=3))
+
+    print("The categories are: ")
+
+    for id, cat in enumerate(set(train_cat)):
+        print(cat, id)
+
+    print("Now print the incorrect classified ones")
+
+    incorrect = []
+    for i in range(len(y_dev_predictions)):
+        if y_dev_predictions[i] != y_dev[i]:
+            incorrect.append(i)
+
+    for i in incorrect[:3]:
+        print(dev_data[i])
+        print("predicted category: " + str(y_dev_predictions[i]))
+        print("true category: " + str(dev_cat[i]))
+
+    # X_test = convert_to_bow_matrix(test_data, word2id)
+    # y_test = [cat2id[cat] for cat in test_cat]
+    #
+    # y_test_predictions = model.predict(X_test)
+    # accuracy = compute_accuracy(y_test_predictions, y_test)
+    # print("Test accuracy " + mode, accuracy)
+    #
+    # cat_names = []
+    # for cat, cid in sorted(cat2id.items(), key=lambda x: x[1]):
+    #     cat_names.append(cat)
+    # print(classification_report(y_test, y_test_predictions, target_names=cat_names, digits=3))
+
+
+def random_forrest(word2id, cat2id, train_data, dev_data, train_cat, dev_cat, mode):
+    X_train = convert_to_bow_matrix(train_data, word2id)
+    y_train = [cat2id[cat] for cat in train_cat]
+
+    model = RandomForestClassifier()
+    model.fit(X_train, y_train)
+
+    y_train_predictions = model.predict(X_train)
+    accuracy = compute_accuracy(y_train_predictions, y_train)
+    print("Training accuracy " + mode, accuracy)
+
+    cat_names = []
+    for cat, cid in sorted(cat2id.items(), key=lambda x: x[1]):
+        cat_names.append(cat)
+    print(classification_report(y_train, y_train_predictions, target_names=cat_names, digits=3))
+
+    X_dev = convert_to_bow_matrix(dev_data, word2id)
+    y_dev = [cat2id[cat] for cat in dev_cat]
+
+    y_dev_predictions = model.predict(X_dev)
+    accuracy = compute_accuracy(y_dev_predictions, y_dev)
+    print("Dev accuracy " + mode, accuracy)
+
+    cat_names = []
+    for cat, cid in sorted(cat2id.items(), key=lambda x: x[1]):
+        cat_names.append(cat)
+    print(classification_report(y_dev, y_dev_predictions, target_names=cat_names, digits=3))
+
+
+def print_accuracy(y_pred, y_true, system, split):
+    f = open('./classification_results/classification.csv', "a")
+    if system == 'baseline' and split == 'train':
+        header = "system,split,p-quran,r-quran,f-quran,p-ot,r-ot,f-ot,p-nt,r-nt,f-nt,p-macro,r-macro,f-macro\n"
+        f.write(header)
+
+    dfpred = pd.DataFrame(y_pred)
+    dftrue = pd.DataFrame(y_true)
+    labels = [0, 1, 2]
+    precision = []
+    recall = []
+    F1 = []
+
+    for label in labels:
+        pred = dfpred[dfpred[0] == label]
+        index_pred = pred.index.tolist()
+        true = dftrue[dftrue[0] == label]
+        index_true = dftrue.reindex(index=index_pred)
+
+        precision.append(sum(np.array(pred) == np.array(index_true)) / len(pred))
+        recall.append(sum(np.array(pred) == np.array(index_true)) / len(true))
+        F1.append(2 * precision[label] * recall[label] / (precision[label] + recall[label]))
+
+    macro_P = np.mean(precision)
+    macro_R = np.mean(recall)
+    macro_F1 = 2 * macro_P * macro_R / (macro_P + macro_R)
+
+    line = system + ',' + split + ',' + "{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f}," \
+                                        "{:.3f},{:.3f}\n".format(precision[0][0], recall[0][0], F1[0][0],
+                                                                 precision[1][0], recall[1][0], F1[1][0],
+                                                                 precision[2][0], recall[2][0], F1[2][0],
+                                                                 macro_P, macro_R, macro_F1)
+    f.write(line)
+
+
 if __name__ == '__main__':
     DATA_DIR = 'data/'
     STOP_WORDS_FILE = 'stop_words.txt'
@@ -353,8 +543,6 @@ if __name__ == '__main__':
 
     download_file(
         'http://members.unine.ch/jacques.savoy/clef/englishST.txt', STOP_WORDS_FILE)
-
-    RESULTS_DIR = 'results/'
 
     # store the list of english stop words
     with open(STOP_WORDS_FILE) as f:
@@ -427,36 +615,34 @@ if __name__ == '__main__':
 
     # part 2 - text analysis
 
-    vocab = []
-    allWords = []
-
-    with open(TRAIN_AND_DEV) as f:
-        for line in f.readlines():
-            corpora, verses = line.strip().split('\t')
-
-            if corpora not in dict_corpora:
-                dict_corpora.setdefault(corpora, []).append(verses)
-            else:
-                dict_corpora[corpora].append(verses)
-
-        for key in dict_corpora:
-            for index, verses in enumerate(dict_corpora[key]):
-                words = preprocess(verses)
-                dict_corpora[key][index] = words
-                vocab.extend(words)
-
-    allWords = set(vocab)
+    # vocab = []
+    # allWords = []
+    #
+    # with open(TRAIN_AND_DEV) as f:
+    #     for line in f.readlines():
+    #         corpora, verses = line.strip().split('\t')
+    #
+    #         if corpora not in dict_corpora:
+    #             dict_corpora.setdefault(corpora, []).append(verses)
+    #         else:
+    #             dict_corpora[corpora].append(verses)
+    #
+    #     for key in dict_corpora:
+    #         for index, verses in enumerate(dict_corpora[key]):
+    #             words = preprocess(verses)
+    #             dict_corpora[key][index] = words
+    #             vocab.extend(words)
+    #
+    # allWords = set(vocab)
     # WorldLevel(allWords)
 
     # run LDA model on three corpora
-    lda, topic_dic_Quran, topic_dic_NT, topic_dic_OT = TopicLevel()
+    # lda, topic_dic_Quran, topic_dic_NT, topic_dic_OT = TopicLevel()
 
     # rank the topics for each corpus
-    topic_ranked_NT = sorted(topic_dic_NT.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)[:20]
-
-    topic_ranked_OT = sorted(topic_dic_OT.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)[:20]
-
-    topic_ranked_Quran = sorted(topic_dic_Quran.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)[:20]
+    # topic_ranked_NT = sorted(topic_dic_NT.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)[:20]
+    # topic_ranked_OT = sorted(topic_dic_OT.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)[:20]
+    # topic_ranked_Quran = sorted(topic_dic_Quran.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)[:20]
 
     # print("ordered topics for NT")
     # for topic in topic_ranked_NT:
@@ -476,111 +662,90 @@ if __name__ == '__main__':
     # part 3 - text classification
 
     all_data = open(TRAIN_AND_DEV, encoding="latin-1").read()
-    test_data = open(TEST, encoding="latin-1").read()
+    all_test_data = open(TEST, encoding="latin-1").read()
 
     lines = all_data.split('\n')
-    data_parsed = []
+    categories = []
+    docs = []
 
     for line in lines:
         line = line.strip()
         if line:
             category, verses = line.split('\t')
-            data_parsed.append((verses, category))
+            categories.append(category)
+            docs.append(verses)
 
-    data_parsed.sort(key=lambda y: y[0])  # fixed order before shuffling
-    random.seed(230)
-    random.shuffle(data_parsed)  # shuffles the ordering of docs (deterministic given the chosen seed)
+    docs, categories = sklearn.utils.shuffle(docs, categories)
 
-    split_1 = int(0.9 * len(data_parsed))
+    split = int(0.9 * len(docs))
 
-    train_docs = data_parsed[:split_1]
-    dev_docs = data_parsed[split_1:]
+    train_cat = categories[:split]
+    dev_cat = categories[split:]
 
-    preprocessed_training_data = []
-    training_categories = []
+    train_data, train_vocab = preprocess_data(docs[:split])
+    dev_data, dev_vocab = preprocess_data(docs[split:])
 
-    for t in train_docs:
-        preprocessed_training_data.append(t[0])
-        training_categories.append(t[1])
+    lines = all_test_data.split('\n')
+    test_categories = []
+    test_docs = []
 
-    preprocessed_training_data, training_categories, train_vocab = preprocess_data(train_docs)
-    preprocessed_test_data, test_categories, test_vocab = preprocess_data(dev_docs)
+    for line in lines:
+        line = line.strip()
+        if line:
+            category, verses = line.split('\t')
+            test_categories.append(category)
+            test_docs.append(verses)
 
-    # print(f"Training Data has {len(preprocessed_training_data)} " +
-    #       f"documents and vocab size of {len(train_vocab)}")
-    # print(f"Test Data has {len(preprocessed_test_data)} " +
-    #       f"documents and vocab size of {len(test_vocab)}")
-    # print(f"There were {len(set(training_categories))} " +
-    #       f"categories in the training data and {len(set(test_categories))} in the test.")
-
-    # print(collections.Counter(training_categories).most_common())
-
-    # # convert the vocab to a word id lookup dictionary
-    # # anything not in this will be considered "out of vocabulary" OOV
+    test_data, test_vocab = preprocess_data(test_docs)
+    test_cat = test_categories
 
     word2id = {}
     for word_id, word in enumerate(train_vocab):
         word2id[word] = word_id
 
     cat2id = {}
-    for cat_id, cat in enumerate(set(training_categories)):
+    for cat_id, cat in enumerate(set(train_cat)):
         cat2id[cat] = cat_id
 
-    X_train = convert_to_bow_matrix(preprocessed_training_data, word2id)
-    y_train = [cat2id[cat] for cat in training_categories]
+    # baseline_TFIDF(word2id, cat2id, train_data, dev_data, train_cat, dev_cat, 1000, "baseline with TFIDF")
 
-    model = sklearn.svm.LinearSVC(C=1000)
-    model.fit(X_train, y_train)
+    baseline(word2id, cat2id, train_data, dev_data, test_data, train_cat, dev_cat, test_cat, 1000, "baseline SVM")
+    # baseline(word2id, cat2id, train_data, dev_data, test_data, train_cat, dev_cat, test_cat, 100, "SVM 100")
+    # baseline(word2id, cat2id, train_data, dev_data, test_data, train_cat, dev_cat, test_cat, 10, "SVM 10")
 
-    y_train_predictions = model.predict(X_train)
-    accuracy = compute_accuracy(y_train_predictions, y_train)
-    print("Training accuracy svm baseline:", accuracy)
+    # random forrest classifier
+    # random_forrest(word2id, cat2id, train_data, dev_data, test_data, train_cat, dev_cat, test_cat, "random forrest")
 
-    X_test = convert_to_bow_matrix(preprocessed_test_data, word2id)
-    y_test = [cat2id[cat] for cat in test_categories]
+    # preprocess the data differently
 
-    y_test_predictions = model.predict(X_test)
-    accuracy = compute_accuracy(y_test_predictions, y_test)
-    print("Test accuracy svm baseline:", accuracy)
+    train_data, train_vocab = light_preprocess_data(docs[:split])
+    dev_data, dev_vocab = light_preprocess_data(docs[split:])
 
-    cat_names = []
-    for cat, cid in sorted(cat2id.items(), key=lambda x: x[1]):
-        cat_names.append(cat)
-    print(classification_report(y_test, y_test_predictions, target_names=cat_names))
+    lines = all_test_data.split('\n')
+    test_categories = []
+    test_docs = []
 
-    # model = sklearn.ensemble.RandomForestClassifier(n_estimators=1000, random_state=0)
-    # model.fit(X_train, y_train)
-    #
-    # y_train_predictions = model.predict(X_train)
-    # print("Train accuracy random_forest was:", compute_accuracy(y_train_predictions, y_train))
-    # y_test_predictions = model.predict(X_test)
-    # print("Test accuracy random_forest was:", compute_accuracy(y_test_predictions, y_test))
-    #
-    # cat_names = []
-    # for cat, cid in sorted(cat2id.items(), key=lambda x: x[1]):
-    #     cat_names.append(cat)
-    # print(classification_report(y_test, y_test_predictions, target_names=cat_names))
+    for line in lines:
+        line = line.strip()
+        if line:
+            category, verses = line.split('\t')
+            test_categories.append(category)
+            test_docs.append(verses)
 
-    # trying haha split into train, dev and test
+    word2id = {}
+    for word_id, word in enumerate(train_vocab):
+        word2id[word] = word_id
 
+    cat2id = {}
+    for cat_id, cat in enumerate(set(train_cat)):
+        cat2id[cat] = cat_id
 
+    # same baseline model with different processed data (stop words removed, stemming)
+    # baseline(word2id, cat2id, train_data, dev_data, train_cat, dev_cat, 1000, "processed SVM")
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    # SVM with C=20, not lower case words and normalised BOW matrix
+    baseline(word2id, cat2id, train_data, dev_data, test_data, train_cat, dev_cat, test_cat, 20,
+             "SVM 20 - normalized - not lower")
 
 
 
